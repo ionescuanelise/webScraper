@@ -52,7 +52,7 @@ def scroll_down_page(driver, last_position, num_seconds_to_load=2, scroll_attemp
 
 
 def save_tweet_data_to_csv(records, filepath, mode='a+'):
-    header = ['User', 'Handle', 'PostDate', 'TweetText', 'ReplyCount', 'RetweetCount', 'LikeCount']
+    header = ['coin_type', 'url', 'title', 'tweet_text', 'published_at', 'source']
     with open(filepath, mode=mode, newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if mode == 'w':
@@ -69,19 +69,13 @@ def collect_all_tweets_from_current_view(driver, lookback_limit=25):
         return page_cards[-lookback_limit:]
 
 
-def extract_data_from_current_tweet_card(card):
+def extract_data_from_current_tweet_card(card, search_term):
     try:
-        user = card.find_element_by_xpath('.//span').text
+        source = "https://twitter.com/" + card.find_element_by_xpath('.//span[contains(text(), "@")]').text
     except exceptions.NoSuchElementException:
-        user = ""
-    except exceptions.StaleElementReferenceException:
-        return
+        source = "https://twitter.com/"
     try:
-        handle = card.find_element_by_xpath('.//span[contains(text(), "@")]').text
-    except exceptions.NoSuchElementException:
-        handle = ""
-    try:
-        postdate = card.find_element_by_xpath('.//time').get_attribute('datetime')
+        published_at = card.find_element_by_xpath('.//time').get_attribute('datetime')
     except exceptions.NoSuchElementException:
         return
     try:
@@ -93,24 +87,16 @@ def extract_data_from_current_tweet_card(card):
     except exceptions.NoSuchElementException:
         _responding = ""
     tweet_text = _comment + _responding
-    try:
-        reply_count = card.find_element_by_xpath('.//div[@data-testid="reply"]').text
-    except exceptions.NoSuchElementException:
-        reply_count = ""
-    try:
-        retweet_count = card.find_element_by_xpath('.//div[@data-testid="retweet"]').text
-    except exceptions.NoSuchElementException:
-        retweet_count = ""
-    try:
-        like_count = card.find_element_by_xpath('.//div[@data-testid="like"]').text
-    except exceptions.NoSuchElementException:
-        like_count = ""
 
-    tweet = (user, handle, postdate, tweet_text, reply_count, retweet_count, like_count)
+    coin_type = search_term
+    title = "top tweet about " + search_term.split(' ')[0] + " news"
+    url = "https://twitter.com/search?q=" + search_term + "&src=typed_query"
+
+    tweet = (coin_type, url, title, tweet_text, published_at, source)
     return tweet
 
 
-def main(search_term, filepath, max_items, page_sort='Top'):
+def main(search_term, filepath, page_sort='Latest'):
     save_tweet_data_to_csv(None, filepath, 'w')  # create file for saving records
     last_position = None
     end_of_scroll_region = False
@@ -124,12 +110,11 @@ def main(search_term, filepath, max_items, page_sort='Top'):
 
     change_page_sort(page_sort, driver)
 
-    count = 0
-    while not end_of_scroll_region and count < max_items:
+    while not end_of_scroll_region:
         cards = collect_all_tweets_from_current_view(driver)
         for card in cards:
             try:
-                tweet = extract_data_from_current_tweet_card(card)
+                tweet = extract_data_from_current_tweet_card(card, search_term)
             except exceptions.StaleElementReferenceException:
                 continue
             if not tweet:
@@ -137,7 +122,6 @@ def main(search_term, filepath, max_items, page_sort='Top'):
             tweet_id = generate_tweet_id(tweet)
             if tweet_id not in unique_tweets:
                 unique_tweets.add(tweet_id)
-                count += 1
                 save_tweet_data_to_csv(tweet, filepath)
         last_position, end_of_scroll_region = scroll_down_page(driver, last_position)
     driver.quit()
@@ -147,4 +131,4 @@ if __name__ == '__main__':
     term = sys.argv[1]
     path = './data/'
     Path(path).mkdir(exist_ok=True)
-    main(term, path + term, 1000)
+    main(term, path + term)
