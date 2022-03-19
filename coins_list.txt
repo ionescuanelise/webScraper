@@ -1,0 +1,37 @@
+Bitcoin
+Ethereum
+Tether
+BNB
+USD Coin
+XRP
+Terra
+Cardano
+Solana
+Avalanche
+Binance USD
+Polkadot
+Dogecoin
+TerraUSD
+Shiba Inu
+Polygon
+Wrapped Bitcoin
+Cronos
+Dai
+Cosmos
+BTC
+ETH
+USDT
+LUNA
+ADA
+SOL
+AVAX
+BUSD
+DOT
+DOGE
+UST
+SHIB
+MATIC
+WBTC
+CRO
+DAI
+ATOM

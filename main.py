@@ -1,11 +1,37 @@
 import csv
-import sys
 from time import sleep
 from pathlib import Path
+
+import sentiment
+
+import nltk
+
+from nltk.stem import PorterStemmer
+from nltk.corpus import stopwords
+
+import re
 
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.common import exceptions
+
+nltk.download("stopwords")
+chachedWords = stopwords.words('english')
+
+
+def tokenize(txt):
+    txt = txt.lower()
+    text_tokens = re.sub(r"[^\w\s]|_", " ", txt).split()
+    return text_tokens
+
+
+def remove_stopwords(input_tokens):
+    return [token for token in input_tokens if token not in chachedWords]
+
+
+def apply_stemming(input_tokens):
+    ps = PorterStemmer()
+    return [ps.stem(token) for token in input_tokens]
 
 
 def create_webdriver_instance():
@@ -30,14 +56,14 @@ def change_page_sort(tab_name, driver):
     """Options for this program are `Latest` and `Top`"""
     tab = driver.find_element_by_link_text(tab_name)
     tab.click()
-    xpath_tab_state = f'//a[contains(text(),\"{tab_name}\") and @aria-selected=\"true\"]'
+    # xpath_tab_state = f'//a[contains(text(),\"{tab_name}\") and @aria-selected=\"true\"]'
 
 
 def generate_tweet_id(tweet):
     return ''.join(tweet)
 
 
-def scroll_down_page(driver, last_position, num_seconds_to_load=2, scroll_attempt=0, max_attempts=50):
+def scroll_down_page(driver, last_position, num_seconds_to_load=2, scroll_attempt=0, max_attempts=60):
     end_of_scroll_region = False
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     sleep(num_seconds_to_load)
@@ -52,8 +78,8 @@ def scroll_down_page(driver, last_position, num_seconds_to_load=2, scroll_attemp
 
 
 def save_tweet_data_to_csv(records, filepath, mode='a+'):
-    header = ['coin_type', 'url', 'title', 'tweet_text', 'published_at', 'source']
-    with open(filepath, mode=mode, newline='', encoding='utf-8') as f:
+    header = ['coin_type', 'url', 'title', 'content', 'published_at', 'source', 'sentiment', 'text']
+    with open(filepath + '_top_news.csv', mode=mode, newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if mode == 'w':
             writer.writerow(header)
@@ -69,9 +95,10 @@ def collect_all_tweets_from_current_view(driver, lookback_limit=25):
         return page_cards[-lookback_limit:]
 
 
-def extract_data_from_current_tweet_card(card, search_term):
+def extract_data_from_current_tweet_card(card, search_term, count):
     try:
         source = "https://twitter.com/" + card.find_element_by_xpath('.//span[contains(text(), "@")]').text
+        handle = card.find_element_by_xpath('.//span[contains(text(), "@")]').text
     except exceptions.NoSuchElementException:
         source = "https://twitter.com/"
     try:
@@ -87,20 +114,26 @@ def extract_data_from_current_tweet_card(card, search_term):
     except exceptions.NoSuchElementException:
         _responding = ""
     tweet_text = _comment + _responding
+    text = tweet_text
 
-    coin_type = search_term
     title = "top tweet about " + search_term.split(' ')[0] + " news"
-    url = "https://twitter.com/search?q=" + search_term + "&src=typed_query"
+    url = "https://twitter.com/search?q=" + search_term + "&src=typed_query/" + handle + str(count)
+    sentiment_score = str(sentiment.get_polarity(tweet_text))
+    words = apply_stemming(remove_stopwords(tokenize(tweet_text)))
+    preprocessed_text = " ".join(words)
+    coin_type = str(search_term)
 
-    tweet = (coin_type, url, title, tweet_text, published_at, source)
+    tweet = (coin_type, url, title, preprocessed_text, published_at, source, sentiment_score, text)
     return tweet
 
 
-def main(search_term, filepath, page_sort='Latest'):
+def main(search_term, filepath, no_of_tweets, page_sort='Latest'):
     save_tweet_data_to_csv(None, filepath, 'w')  # create file for saving records
     last_position = None
     end_of_scroll_region = False
     unique_tweets = set()
+
+    count = 0
 
     driver = create_webdriver_instance()
 
@@ -110,17 +143,18 @@ def main(search_term, filepath, page_sort='Latest'):
 
     change_page_sort(page_sort, driver)
 
-    while not end_of_scroll_region:
+    while not end_of_scroll_region and count < no_of_tweets:
         cards = collect_all_tweets_from_current_view(driver)
         for card in cards:
             try:
-                tweet = extract_data_from_current_tweet_card(card, search_term)
+                tweet = extract_data_from_current_tweet_card(card, search_term, count)
             except exceptions.StaleElementReferenceException:
                 continue
             if not tweet:
                 continue
             tweet_id = generate_tweet_id(tweet)
             if tweet_id not in unique_tweets:
+                count += 1
                 unique_tweets.add(tweet_id)
                 save_tweet_data_to_csv(tweet, filepath)
         last_position, end_of_scroll_region = scroll_down_page(driver, last_position)
@@ -128,7 +162,12 @@ def main(search_term, filepath, page_sort='Latest'):
 
 
 if __name__ == '__main__':
-    term = sys.argv[1]
     path = './data/'
     Path(path).mkdir(exist_ok=True)
-    main(term, path + term)
+    with open('coins_list.txt', 'r') as file:
+        terms = file.read().rstrip()
+
+    for term in terms:
+        main(term, path + term, 500000)
+
+
